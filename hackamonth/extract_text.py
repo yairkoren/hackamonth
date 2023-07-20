@@ -202,10 +202,20 @@ def extract_text_from_audio_file(path_to_audio_file: str) -> str :
 
 # pip3 install youtube_transcript_api
 from youtube_transcript_api import YouTubeTranscriptApi
-# The video ID is the string after "v=" in the YouTube video URL
+import re
 
-def extract_youtube_subtitles(video_id: str) -> str :
-    transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
+def extract_youtube_subtitles(video_id_or_url: str) -> str :
+
+    youtube_video_id = video_id_or_url
+    # option 1: https://www.youtube.com/watch?v=khWqwcyTyjY
+    # option 2: https://www.youtube.com/shorts/bUFdVWS3UJY
+    youtube_url_pattern = r'youtube\.com/(watch\?v=|shorts/)([a-zA-Z0-9-]*)'
+    match = re.search(youtube_url_pattern, video_id_or_url)
+
+    if match :
+        youtube_video_id = match.group(2)
+
+    transcript = YouTubeTranscriptApi.get_transcript(youtube_video_id, languages=['en'])
     list_of_text_entries = []
 
     for entry in transcript :
