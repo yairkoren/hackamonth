@@ -13,6 +13,31 @@
 #
 # extract_tables_from_pdf_with_pdfplumber("/Users/yairkoren/Downloads/2111.07866.pdf")
 
+# pip3 install googlesearch-python
+from googlesearch import search
+
+def search_web(query: str) -> list:
+    # Search on Google with given query.
+    google_result = search(query, num_results=5, advanced=True, lang='en')
+    result = []
+    for i, x in enumerate(google_result) :
+        item = str(x).replace('SearchResult', '(' + str(i+1) + ') : ')
+        print(item)
+        result.append( item + '\n' )
+    return "".join(result)
+
+import pyperclip
+from PIL import ImageGrab
+
+def get_clipboard_content() :
+    # Try to get the clipboard content as an image
+    image = ImageGrab.grabclipboard()
+
+    if image is not None :
+        return image
+    else :
+        return pyperclip.paste()
+
 
 from pdfminer.high_level import extract_pages, extract_text
 
@@ -28,10 +53,39 @@ def extract_text_from_pdf_with_pdfminer(path_to_file: str, pages_to_process: str
 
 from pix2text import Pix2Text
 
-def extract_latex_from_formula_image(path_to_formula_image: str) :
+def extract_text_from_image_with_pix2text(path_to_formula_image: str) :
     p2t = Pix2Text()
     text = p2t(path_to_formula_image)
-    return text[0]['text']
+    result = []
+    for entry in text :
+        result.append(entry['text'] + '\n')
+
+    return "".join(result)
+
+
+from datetime import datetime
+
+def extract_text_from_clipboard() :
+
+    # clipboard may contain text or (png-format) image. This will extract text regardless
+
+    clipboard_content = get_clipboard_content()
+    if isinstance(clipboard_content, str) :
+        return clipboard_content # if it's text, just return it
+
+    # clipboard content is an image:
+    path_to_image_file = './output-' + datetime.now().strftime('%Y-%m-%d--%H:%M:%S.%f') + '.png'
+    clipboard_content.save(path_to_image_file)
+    p2t_text = extract_text_from_image_with_pix2text(path_to_image_file) # better for formulas
+    tesseract_text = extract_text_from_image_with_tesseract(path_to_image_file) # better for tables
+    print("p2t_text=\n" + str(p2t_text))
+    print("tesseract_text=\n" + tesseract_text)
+    os.remove(path_to_image_file) # delete the temporary file
+    if len(p2t_text) > len(tesseract_text) : # pick the longer text extraction
+        return p2t_text
+    else :
+        return tesseract_text
+
 
 # pip3 install tabula-py
 # download java from https://www.java.com/en/download/
@@ -91,6 +145,9 @@ from bs4 import BeautifulSoup
 
 def extract_text_from_webpage(url: str) -> str :
 
+    if not url.startswith('http') :
+        url = 'https://' + url
+
     # Make a request to the website
     r = requests.get(url)
 
@@ -105,26 +162,35 @@ def extract_text_from_webpage(url: str) -> str :
 import urllib
 import feedparser
 
-def get_paper_from_arxiv(query: str, attribute_type: str = 'all', max_results: str = 5) :
+def search_arxiv(query: str, attribute_type: str = 'all', max_results: str = 5) :
     # Base api query url
     base_url = 'http://export.arxiv.org/api/query?'
 
     # attribute types:  'author':   'au',   'abstract':      'abs', 'comment': 'co', 'journal_reference': 'jr',
     #                   'category': 'cat',  'report_number': 'rn',  'title':   'ti', 'all_fields':        'all'
 
-    query = urllib.parse.quote(query) # encode input in URL acceptable form (e.g. special space -> %20 escape sequence)
+    # encode input in URL acceptable form (e.g. special space -> %20 escape sequence)
+    query = urllib.parse.quote(query)
 
     query_url = f"{base_url}search_query={attribute_type}:{query}&start={0}&max_results={max_results}"
 
     # Parse the response using feedparser
     response = feedparser.parse(query_url)
-
+    final_result = []
     # Print each paper's title and the link to the pdf version
     for entry in response.entries:
-        print("Title: ", entry.title)
+        current_result = ""
+        #print("Title: ", entry.title)
+        current_result += "Year: " + str(entry.published_parsed.tm_year) + ", Title: " + entry.title + \
+                ", Authors: "
+        for author in entry.authors:
+            current_result += author.name + ", "
         for link in entry.links:
             if link.type == 'application/pdf':
-                print("Link: ", link.href)
+                current_result += "Link: " + link.href + "\n"
+                #print("Link: ", link.href)
+        final_result.append(current_result)
+    return "".join(final_result)
 
 
 # if errors occur, might need to uninstall pillow+PIL and the reinstall PIL
@@ -134,7 +200,7 @@ from PIL import Image
 # to install python tesseract: pip3 install pytesseract pillow
 import pytesseract
 
-def extract_text_from_image(path_to_image_file: str) -> str :
+def extract_text_from_image_with_tesseract(path_to_image_file: str) -> str :
 
     # Open an image file
     with Image.open(path_to_image_file) as image_file :
@@ -187,6 +253,11 @@ def extract_images_from_pdf(path_to_pdf) :
 import speech_recognition as sr
 
 def extract_text_from_audio_file(path_to_audio_file: str) -> str :
+    audio_file_name, audio_file_extension = os.path.splitext(path_to_audio_file)
+    if audio_file_extension != "wav" :
+        path_to_wav_file = audio_file_name + ".wav"
+        convert_audio_format(path_to_audio_file, path_to_wav_file)
+        path_to_audio_file = path_to_wav_file
     # create an instance of the recognizer
     r = sr.Recognizer()
 
@@ -234,7 +305,7 @@ def extract_audio_from_video(path_to_input_video_file: str, path_to_output_audio
 
 # need pydub for audio conversion in python (uses ffmpeg)
 from pydub import AudioSegment
-import os.path
+import os
 
 def convert_audio_format(path_to_input_audio_file: str, path_to_output_audio_file: str) :
     output_file_extension = os.path.splitext(path_to_output_audio_file)[1][1:] # second index removes leading "."
